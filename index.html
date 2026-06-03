@@ -525,9 +525,12 @@
       <a-asset-item id="preload0" src="3d-model/KaramisoRamen/KaramisoRamen.glb"></a-asset-item>
     </a-assets>
 
-    <a-light type="ambient"     color="#fff8ee" intensity="0.65"></a-light>
-    <a-light type="directional" color="#fffaf0" intensity="0.9"  position="1 2 1"></a-light>
-    <a-light type="directional" color="#d4a84b" intensity="0.25" position="-1 1 -1"></a-light>
+ <!-- NEW — paste these 5 lines -->
+<a-light type="ambient"     color="#ffffff" intensity="1.8"></a-light>
+<a-light type="directional" color="#ffffff" intensity="1.6"  position="1 3 2"></a-light>
+<a-light type="directional" color="#ffe9c0" intensity="1.0"  position="-2 2 -1"></a-light>
+<a-light type="directional" color="#cce8ff" intensity="0.6"  position="0 -1 2"></a-light>
+<a-light type="point"       color="#fff5e0" intensity="1.2"  position="0 1.5 1" distance="4" decay="2"></a-light>
 
     <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
