@@ -9,23 +9,6 @@
   <meta http-equiv="Permissions-Policy" content="camera=*">
   <title>AR Menu – 3D Dish Preview</title>
 
-  <!--
-    Architecture:
-    ─────────────────────────────────────────────────────────────
-    TABLE MODE  (default, no card needed)
-      • Raw camera feed via <video> element (plain getUserMedia)
-      • Three.js scene rendered on a <canvas> overlay
-      • GLTFLoader loads model → always centred, "on the table"
-      • No MindAR, no image tracking needed
-
-    CARD MODE  (optional, scan the menu card)
-      • MindAR image tracking
-      • A-Frame scene takes over, model locked to card marker
-      • Swap back to table mode anytime
-    ─────────────────────────────────────────────────────────────
-    This way the dish is ALWAYS visible the moment the camera opens.
-  -->
-
   <!-- Three.js for table mode renderer -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/GLTFLoader.js"></script>
@@ -356,7 +339,6 @@
 
     /* ═══════════════════════════════════
        MODE TOGGLE BUTTON
-       "Scan Card" / "Place on Table"
     ═══════════════════════════════════ */
     #modeToggleBtn {
       position: fixed; bottom: 108px; left: 50%; transform: translateX(-50%);
@@ -476,13 +458,6 @@
     @keyframes flashFade { 0% { opacity: 1; } 100% { opacity: 0; } }
     #swipeFlash.flash { animation: flashFade 0.35s ease-out forwards; }
 
-    /* model drop-in animation */
-    @keyframes modelDropIn {
-      0%   { opacity: 0; transform: translateY(-30px) scale(0.85); }
-      65%  { opacity: 1; transform: translateY(6px)  scale(1.04); }
-      100% { opacity: 1; transform: translateY(0)    scale(1); }
-    }
-
     /* iOS safe area */
     @supports (padding-bottom: env(safe-area-inset-bottom)) {
       #dishCarousel   { bottom: calc(20px  + env(safe-area-inset-bottom)); }
@@ -585,11 +560,9 @@
 
   <!-- ══ MODE TOGGLE BUTTON ══ -->
   <button id="modeToggleBtn">
-    <!-- table icon (default) -->
     <svg id="modeIconTable" viewBox="0 0 24 24">
       <path d="M3 17 Q12 13 21 17"/><line x1="8" y1="17" x2="7" y2="21"/><line x1="16" y1="17" x2="17" y2="21"/>
     </svg>
-    <!-- card/scan icon (shown in card mode) -->
     <svg id="modeIconCard" viewBox="0 0 24 24" style="display:none">
       <rect x="3" y="6" width="18" height="12" rx="2"/>
       <path d="M3 10h18"/>
@@ -627,67 +600,86 @@
   <script>
   /* ════════════════════════════════════════════════════════════
      DISH DATA
+     ─────────────────────────────────────────────────────────
+     tableScale : size of the model in Three.js world units
+     tableY     : vertical offset after bounding-box centering
+                  (negative = lower; tune per model)
+     rotation   : A-Frame-style "X Y Z" degrees string —
+                  applied in YXZ order to match A-Frame exactly
   ════════════════════════════════════════════════════════════ */
   const dishes = [
-    { name: "Karamiso Ramen", folder: "KaramisoRamen", model: "KaramisoRamen.glb", thumb: "karamisoramen.png",
+    {
+      name: "Karamiso Ramen",
+      folder: "KaramisoRamen", model: "KaramisoRamen.glb", thumb: "karamisoramen.png",
       scale: "4 4 4",       rotation: "90 90 90",
-      tableScale: 0.06,     tableY: -0.5 },   // Three.js table-mode size & vertical offset
-    { name: "Shio Ramen",     folder: "ShioRamen",     model: "ShioRamen.glb",     thumb: "shioramen.png",
+      tableScale: 0.06,     tableY: -0.12
+    },
+    {
+      name: "Shio Ramen",
+      folder: "ShioRamen",     model: "ShioRamen.glb",     thumb: "shioramen.png",
       scale: "9 9 9",       rotation: "90 90 90",
-      tableScale: 0.13,     tableY: -0.5 },
-    { name: "Shoyu Ramen",    folder: "ShoyuRamen",    model: "ShoyuRamen.glb",    thumb: "shoyuramen.png",
+      tableScale: 0.13,     tableY: -0.15
+    },
+    {
+      name: "Shoyu Ramen",
+      folder: "ShoyuRamen",    model: "ShoyuRamen.glb",    thumb: "shoyuramen.png",
       scale: "9 9 9",       rotation: "90 90 90",
-      tableScale: 0.13,     tableY: -0.5 },
-    { name: "Tantanmen",      folder: "Tantanman",     model: "Tantanman.glb",     thumb: "tantanman.png",
+      tableScale: 0.13,     tableY: -0.15
+    },
+    {
+      name: "Tantanmen",
+      folder: "Tantanman",     model: "Tantanman.glb",     thumb: "tantanman.png",
       scale: "1.5 1.5 1.5", rotation: "90 90 90",
-      tableScale: 0.022,    tableY: -0.5 },
+      tableScale: 0.022,    tableY: -0.08
+    },
   ];
 
   /* ════════════════════════════════════════════════════════════
      STATE
   ════════════════════════════════════════════════════════════ */
-  let currentIndex   = -1;
-  let appStarted     = false;
-  let isCardMode     = false;   // false = table mode (default), true = card/MindAR mode
-  let swipeHintShown = false;
-  let modelTimeout   = null;
+  let currentIndex      = -1;
+  let appStarted        = false;
+  let isCardMode        = false;
+  let swipeHintShown    = false;
+  let modelTimeout      = null;
 
   /* ── THREE.JS TABLE MODE STATE ── */
-  let threeRenderer  = null;
-  let threeScene     = null;
-  let threeCamera    = null;
-  let tableModel     = null;   // currently loaded Three.js GLTF object
-  let threeAnimId    = null;
+  let threeRenderer     = null;
+  let threeScene        = null;
+  let threeCamera       = null;
+  let tableModel        = null;
+  let threeAnimId       = null;
   let tableModelLoading = false;
+  let pendingLoadIndex  = -1;   // FIX: track if a load was requested while busy
 
   /* ── DOM REFS ── */
-  const tableVideo     = document.getElementById('tableVideo');
-  const tableCanvas    = document.getElementById('tableCanvas');
-  const arScene        = document.getElementById('arScene');
-  const cardModelEntity= document.getElementById('cardModelEntity');
-  const target         = document.getElementById('target1');
+  const tableVideo      = document.getElementById('tableVideo');
+  const tableCanvas     = document.getElementById('tableCanvas');
+  const arScene         = document.getElementById('arScene');
+  const cardModelEntity = document.getElementById('cardModelEntity');
+  const target          = document.getElementById('target1');
 
-  const startScreen    = document.getElementById('startScreen');
-  const loadingOverlay = document.getElementById('loadingOverlay');
-  const loadingStatus  = document.getElementById('loadingStatus');
-  const errorOverlay   = document.getElementById('errorOverlay');
-  const modelLoader    = document.getElementById('modelLoader');
-  const logo           = document.getElementById('logo');
-  const dishLabel      = document.getElementById('dishLabel');
-  const dishLabelText  = document.getElementById('dishLabelText');
-  const dishCarousel   = document.getElementById('dishCarousel');
-  const dishCounter    = document.getElementById('dishCounter');
-  const modeBadge      = document.getElementById('modeBadge');
-  const modeBadgeText  = document.getElementById('modeBadgeText');
-  const tableShadow    = document.getElementById('tableShadow');
-  const modeToggleBtn  = document.getElementById('modeToggleBtn');
-  const modeToggleText = document.getElementById('modeToggleText');
-  const modeIconTable  = document.getElementById('modeIconTable');
-  const modeIconCard   = document.getElementById('modeIconCard');
-  const scanHint       = document.getElementById('scanHint');
-  const swipeZone      = document.getElementById('swipeZone');
-  const swipeHint      = document.getElementById('swipeHint');
-  const swipeFlash     = document.getElementById('swipeFlash');
+  const startScreen     = document.getElementById('startScreen');
+  const loadingOverlay  = document.getElementById('loadingOverlay');
+  const loadingStatus   = document.getElementById('loadingStatus');
+  const errorOverlay    = document.getElementById('errorOverlay');
+  const modelLoader     = document.getElementById('modelLoader');
+  const logo            = document.getElementById('logo');
+  const dishLabel       = document.getElementById('dishLabel');
+  const dishLabelText   = document.getElementById('dishLabelText');
+  const dishCarousel    = document.getElementById('dishCarousel');
+  const dishCounter     = document.getElementById('dishCounter');
+  const modeBadge       = document.getElementById('modeBadge');
+  const modeBadgeText   = document.getElementById('modeBadgeText');
+  const tableShadow     = document.getElementById('tableShadow');
+  const modeToggleBtn   = document.getElementById('modeToggleBtn');
+  const modeToggleText  = document.getElementById('modeToggleText');
+  const modeIconTable   = document.getElementById('modeIconTable');
+  const modeIconCard    = document.getElementById('modeIconCard');
+  const scanHint        = document.getElementById('scanHint');
+  const swipeZone       = document.getElementById('swipeZone');
+  const swipeHint       = document.getElementById('swipeHint');
+  const swipeFlash      = document.getElementById('swipeFlash');
 
   /* ════════════════════════════════════════════════════════════
      BUILD CAROUSEL + COUNTER DOTS
@@ -722,25 +714,23 @@
 
   /* ════════════════════════════════════════════════════════════
      THREE.JS TABLE MODE
-     ─────────────────────────────────────────────────────────
-     Sets up a transparent Three.js renderer over the raw camera
-     video. The dish floats centred in the lower-middle of screen,
-     gently rotating — no card, no tracking needed.
   ════════════════════════════════════════════════════════════ */
   function initThree() {
     threeScene  = new THREE.Scene();
+
+    /* ── FIX: camera closer and looking at the right spot ── */
     threeCamera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 100);
-    threeCamera.position.set(0, 0.2, 2.2);
-    threeCamera.lookAt(0, -0.1, 0);
+    threeCamera.position.set(0, 0.15, 1.8);
+    threeCamera.lookAt(0, -0.05, 0);
 
     threeRenderer = new THREE.WebGLRenderer({ canvas: tableCanvas, alpha: true, antialias: false });
     threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     threeRenderer.setSize(window.innerWidth, window.innerHeight);
-    threeRenderer.setClearColor(0x000000, 0); // fully transparent — shows camera through
+    threeRenderer.setClearColor(0x000000, 0);
     threeRenderer.outputEncoding = THREE.sRGBEncoding;
     threeRenderer.shadowMap.enabled = false;
 
-    // Lighting — warm restaurant feel
+    /* Lighting — warm restaurant feel */
     threeScene.add(new THREE.AmbientLight(0xffffff, 2.2));
     const key = new THREE.DirectionalLight(0xfff5e0, 2.0);
     key.position.set(1, 3, 2); threeScene.add(key);
@@ -756,17 +746,34 @@
     });
   }
 
+  /* ════════════════════════════════════════════════════════════
+     LOAD TABLE MODEL  — fixed rotation order + scale-before-centre
+  ════════════════════════════════════════════════════════════ */
   function loadTableModel(index) {
+    /* FIX: if already loading, remember the new request and serve it after */
+    if (tableModelLoading) {
+      pendingLoadIndex = index;
+      return;
+    }
+
     const dish = dishes[index];
-    if (tableModelLoading) return;
     tableModelLoading = true;
+    pendingLoadIndex  = -1;
 
     modelLoader.classList.add('show');
 
-    // Remove previous model
+    /* Remove previous model cleanly */
     if (tableModel) {
       threeScene.remove(tableModel);
-      tableModel.traverse(c => { if (c.isMesh) { c.geometry.dispose(); } });
+      tableModel.traverse(c => {
+        if (c.isMesh) {
+          c.geometry.dispose();
+          if (c.material) {
+            if (Array.isArray(c.material)) c.material.forEach(m => m.dispose());
+            else c.material.dispose();
+          }
+        }
+      });
       tableModel = null;
     }
 
@@ -777,45 +784,64 @@
         tableModelLoading = false;
         modelLoader.classList.remove('show');
 
+        /* ── FIX 1: Scale FIRST so bounding-box centring is accurate ── */
         const model = gltf.scene;
-
-        // Auto-centre the bounding box
-        const box = new THREE.Box3().setFromObject(model);
-        const centre = box.getCenter(new THREE.Vector3());
-        model.position.sub(centre);                    // centre on origin
-        model.position.y += dish.tableY;               // shift down to "table level"
         model.scale.setScalar(dish.tableScale);
 
-        // Apply the same rotation as A-Frame (degrees → radians, XYZ order)
-        const rParts = dish.rotation.split(' ').map(v => THREE.MathUtils.degToRad(parseFloat(v)));
+        /* ── FIX 2: Rotation — use YXZ order to match A-Frame exactly ── */
+        model.rotation.order = 'YXZ';
+        const rParts = dish.rotation.split(' ')
+          .map(v => THREE.MathUtils.degToRad(parseFloat(v)));
+        // A-Frame rotation string order is "X Y Z" degrees
         model.rotation.set(rParts[0], rParts[1], rParts[2]);
+
+        /* ── Centre bounding box on origin, then apply vertical offset ── */
+        const box    = new THREE.Box3().setFromObject(model);
+        const centre = box.getCenter(new THREE.Vector3());
+        model.position.sub(centre);          // centre on origin
+        model.position.y += dish.tableY;     // shift to table level
 
         threeScene.add(model);
         tableModel = model;
 
         tableShadow.classList.add('visible');
+
+        /* ── FIX 3: serve any dish switch that arrived while we were loading ── */
+        if (pendingLoadIndex >= 0 && pendingLoadIndex !== index) {
+          const next = pendingLoadIndex;
+          pendingLoadIndex = -1;
+          loadTableModel(next);
+        }
       },
       undefined,
       (err) => {
         tableModelLoading = false;
         modelLoader.classList.remove('show');
-        console.error('Three.js GLTFLoader error:', err);
+        console.error('GLTFLoader error:', err);
+
+        /* Still serve pending if load failed */
+        if (pendingLoadIndex >= 0) {
+          const next = pendingLoadIndex;
+          pendingLoadIndex = -1;
+          loadTableModel(next);
+        }
       }
     );
   }
 
+  /* ── Render loop ── */
   let tableRotY = 0;
   function animateTable() {
     threeAnimId = requestAnimationFrame(animateTable);
     if (tableModel) {
-      tableRotY += 0.004; // gentle idle rotation
+      tableRotY += 0.004;
       tableModel.rotation.y = tableRotY;
     }
     threeRenderer.render(threeScene, threeCamera);
   }
 
   /* ════════════════════════════════════════════════════════════
-     SELECT DISH  — works in both modes
+     SELECT DISH
   ════════════════════════════════════════════════════════════ */
   function selectDish(index) {
     if (index === currentIndex) return;
@@ -823,7 +849,7 @@
     updateUI(index);
 
     if (isCardMode) {
-      // ── Card mode: update A-Frame entity ──
+      /* ── Card mode: update A-Frame entity ── */
       if (modelTimeout) { clearTimeout(modelTimeout); modelTimeout = null; }
       modelLoader.classList.add('show');
       cardModelEntity.removeAttribute('gltf-model');
@@ -840,7 +866,7 @@
       }, { once: true });
       modelTimeout = setTimeout(() => modelLoader.classList.remove('show'), 5000);
     } else {
-      // ── Table mode: swap Three.js model ──
+      /* ── Table mode: swap Three.js model ── */
       tableRotY = 0;
       loadTableModel(index);
     }
@@ -848,39 +874,32 @@
 
   /* ════════════════════════════════════════════════════════════
      MODE SWITCHING
-     TABLE MODE  → raw camera + Three.js canvas  (default)
-     CARD MODE   → MindAR A-Frame scene
   ════════════════════════════════════════════════════════════ */
   function showTableMode() {
     isCardMode = false;
 
-    // Show table layers
     tableVideo.style.display  = 'block';
     tableCanvas.style.display = 'block';
     tableShadow.classList.add('visible');
 
-    // Hide A-Frame
-    arScene.style.display = 'none';
+    arScene.style.display  = 'none';
     scanHint.style.opacity = '0';
 
-    // Toggle button
-    modeToggleText.textContent = 'Scan Card Instead';
-    modeIconTable.style.display = '';
-    modeIconCard.style.display  = 'none';
+    modeToggleText.textContent      = 'Scan Card Instead';
+    modeIconTable.style.display     = '';
+    modeIconCard.style.display      = 'none';
     modeToggleBtn.classList.remove('card-active');
 
-    // Badge
     modeBadgeText.textContent = 'Table View';
     modeBadge.classList.add('visible');
 
-    // Dish label always visible in table mode
-    dishLabel.style.opacity      = '1';
-    dishLabel.style.pointerEvents= 'auto';
+    dishLabel.style.opacity       = '1';
+    dishLabel.style.pointerEvents = 'auto';
 
-    // Resume Three.js render loop
+    /* Resume Three.js render loop */
     if (threeAnimId === null) animateTable();
 
-    // Reload current dish in Three.js
+    /* Reload current dish */
     if (currentIndex >= 0) {
       tableRotY = 0;
       loadTableModel(currentIndex);
@@ -890,33 +909,40 @@
   function showCardMode() {
     isCardMode = true;
 
-    // Hide table layers
     tableVideo.style.display  = 'none';
     tableCanvas.style.display = 'none';
     tableShadow.classList.remove('visible');
 
-    // Stop Three.js loop (save battery)
+    /* Stop Three.js loop to save battery */
     if (threeAnimId !== null) { cancelAnimationFrame(threeAnimId); threeAnimId = null; }
-    if (tableModel) { threeScene.remove(tableModel); tableModel = null; }
+    if (tableModel) {
+      threeScene.remove(tableModel);
+      tableModel.traverse(c => {
+        if (c.isMesh) {
+          c.geometry.dispose();
+          if (c.material) {
+            if (Array.isArray(c.material)) c.material.forEach(m => m.dispose());
+            else c.material.dispose();
+          }
+        }
+      });
+      tableModel = null;
+    }
 
-    // Show A-Frame
-    arScene.style.display = 'block';
+    arScene.style.display  = 'block';
     scanHint.style.opacity = '1';
 
-    // Toggle button
-    modeToggleText.textContent = 'See on Table';
+    modeToggleText.textContent  = 'See on Table';
     modeIconTable.style.display = 'none';
     modeIconCard.style.display  = '';
     modeToggleBtn.classList.add('card-active');
 
-    // Badge
     modeBadgeText.textContent = 'Card Mode';
 
-    // Dish label only visible when marker found
-    dishLabel.style.opacity      = '0';
-    dishLabel.style.pointerEvents= 'none';
+    dishLabel.style.opacity       = '0';
+    dishLabel.style.pointerEvents = 'none';
 
-    // Load current dish into A-Frame
+    /* Load current dish into A-Frame */
     if (currentIndex >= 0) {
       const d = dishes[currentIndex];
       cardModelEntity.removeAttribute('gltf-model');
@@ -928,7 +954,7 @@
     }
   }
 
-  ['click','touchend'].forEach(evt => {
+  ['click', 'touchend'].forEach(evt => {
     modeToggleBtn.addEventListener(evt, (e) => {
       e.preventDefault();
       isCardMode ? showTableMode() : showCardMode();
@@ -936,7 +962,7 @@
   });
 
   /* ════════════════════════════════════════════════════════════
-     APP START  — camera permission → table mode immediately
+     APP START
   ════════════════════════════════════════════════════════════ */
   async function startApp() {
     if (appStarted) return;
@@ -955,32 +981,29 @@
         audio: false
       };
 
-      // Start camera stream for table video
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       tableVideo.srcObject = stream;
       await tableVideo.play();
 
       loadingStatus.textContent = 'Loading scene';
 
-      // Init Three.js
       initThree();
 
       appStarted = true;
       loadingOverlay.classList.remove('show');
 
-      // Show all persistent chrome
       [dishCarousel, logo, dishCounter, modeToggleBtn].forEach(el => {
-        el.style.opacity      = '1';
-        el.style.pointerEvents= 'auto';
+        el.style.opacity       = '1';
+        el.style.pointerEvents = 'auto';
       });
       dishCounter.classList.add('visible');
       modeToggleBtn.classList.add('visible');
 
-      // Start in TABLE MODE immediately — dish visible right away
+      /* Start in TABLE MODE — dish visible immediately */
       selectDish(0);
       showTableMode();
 
-      // Show swipe hint after a beat
+      /* Swipe hint after a beat */
       setTimeout(() => {
         if (!swipeHintShown) {
           swipeHintShown = true;
@@ -1003,15 +1026,15 @@
   ════════════════════════════════════════════════════════════ */
   target.addEventListener('targetFound', () => {
     if (!isCardMode) return;
-    dishLabel.style.opacity      = '1';
-    dishLabel.style.pointerEvents= 'auto';
-    scanHint.style.opacity = '0';
+    dishLabel.style.opacity       = '1';
+    dishLabel.style.pointerEvents = 'auto';
+    scanHint.style.opacity        = '0';
   });
   target.addEventListener('targetLost', () => {
     if (!isCardMode) return;
-    dishLabel.style.opacity      = '0';
-    dishLabel.style.pointerEvents= 'none';
-    scanHint.style.opacity = '1';
+    dishLabel.style.opacity       = '0';
+    dishLabel.style.pointerEvents = 'none';
+    scanHint.style.opacity        = '1';
   });
 
   /* ════════════════════════════════════════════════════════════
@@ -1045,7 +1068,7 @@
   /* ════════════════════════════════════════════════════════════
      BUTTON HANDLERS
   ════════════════════════════════════════════════════════════ */
-  ['click','touchend'].forEach(evt => {
+  ['click', 'touchend'].forEach(evt => {
     document.getElementById('startBtn').addEventListener(evt, (e) => { e.preventDefault(); startApp(); });
     document.getElementById('retryBtn').addEventListener(evt, (e) => {
       e.preventDefault();
