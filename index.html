@@ -785,8 +785,8 @@
         When you look DOWN (low beta), the model shifts LOWER down your screen and closer to your feet.
         When you hold your phone UP, it project FURTHER into the distance.
       */
-      const y = -0.9 - (t * 0.7);  // Pushes item down into floor space (-0.9m to -1.6m)
-      const z = -1.5 - (t * 1.1);  // Generates perspective depth (-1.5m to -2.6m away)
+      const y = -0.2 - (t * 0.4);  
+      const z = -1.6 - (t * 0.8); // Generates perspective depth (-1.5m to -2.6m away)
 
       dishEntity.setAttribute('position', `0 ${y.toFixed(3)} ${z.toFixed(3)}`);
     }
