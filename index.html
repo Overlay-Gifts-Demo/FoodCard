@@ -6,11 +6,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta http-equiv="Permissions-Policy" content="camera=*">
-  <title>AR Menu – 3D Dish Try-On</title>
+  <meta http-equiv="Permissions-Policy" content="camera=*; gyroscope=*; accelerometer=*">
+  <title>AR Menu – 3D Dish Preview</title>
 
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600;700&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
 
   <style>
@@ -39,22 +38,25 @@
 
     .a-enter-vr-button { display: none !important; }
 
-    a-scene {
-      position: fixed !important; top: 0 !important; left: 0 !important;
-      width: 100% !important; height: 100% !important; z-index: 0 !important;
-    }
-    canvas.a-canvas {
-      width: 100% !important; height: 100% !important;
-      position: fixed !important; top: 0 !important; left: 0 !important;
-    }
-    video {
-      position: fixed !important; top: 0 !important; left: 0 !important;
-      width: 100% !important; height: 100% !important;
-      object-fit: cover !important; z-index: -1 !important;
+    /* ── Camera video feed fills screen ── */
+    #cameraFeed {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      z-index: 0;
       -webkit-playsinline: true;
       playsinline: true;
     }
 
+    /* ── Three.js canvas overlay ── */
+    #arCanvas {
+      position: fixed; inset: 0;
+      width: 100% !important; height: 100% !important;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* Noise grain overlay */
     body::after {
       content: '';
       position: fixed; inset: 0;
@@ -69,7 +71,7 @@
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       z-index: 999; padding: 40px 32px;
-      transition: opacity 0.4s ease;
+      transition: opacity 0.5s ease;
     }
     #startScreen::before, #startScreen::after {
       content: '';
@@ -99,56 +101,45 @@
     }
     .start-ornament-diamond {
       width: 6px; height: 6px;
-      background: var(--gold);
-      transform: rotate(45deg);
+      background: var(--gold); transform: rotate(45deg);
     }
     #startScreen img.start-logo {
-      width: 72px; height: 72px;
-      object-fit: contain;
+      width: 72px; height: 72px; object-fit: contain;
       margin-bottom: 20px;
       filter: brightness(0) invert(1) sepia(1) saturate(0.6);
     }
     .start-eyebrow {
       font-size: 10px; font-weight: 400;
-      letter-spacing: 0.22em;
-      color: var(--gold);
-      text-transform: uppercase;
-      margin-bottom: 14px;
+      letter-spacing: 0.22em; color: var(--gold);
+      text-transform: uppercase; margin-bottom: 14px;
     }
     #startScreen h1 {
       font-family: 'Cormorant Garamond', serif;
-      color: var(--cream);
-      font-size: 36px; font-weight: 300;
+      color: var(--cream); font-size: 36px; font-weight: 300;
       letter-spacing: 0.01em; line-height: 1.15;
       text-align: center; margin-bottom: 20px;
     }
     #startScreen h1 em { font-style: italic; color: var(--gold-light); }
     #startScreen p {
-      color: rgba(245,240,232,0.42);
-      font-size: 13px; font-weight: 300;
-      text-align: center; line-height: 1.75;
-      margin-bottom: 36px; letter-spacing: 0.03em;
+      color: rgba(245,240,232,0.42); font-size: 13px; font-weight: 300;
+      text-align: center; line-height: 1.75; margin-bottom: 36px;
+      letter-spacing: 0.03em;
     }
     #startBtn {
-      position: relative;
-      padding: 16px 42px;
+      position: relative; padding: 16px 42px;
       font-family: 'Jost', sans-serif;
       font-size: 12px; font-weight: 400;
       letter-spacing: 0.18em; text-transform: uppercase;
-      border: 1px solid var(--gold-border);
-      border-radius: var(--radius-pill);
-      background: transparent;
-      color: var(--gold-light);
+      border: 1px solid var(--gold-border); border-radius: var(--radius-pill);
+      background: transparent; color: var(--gold-light);
       cursor: pointer; overflow: hidden;
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
       transition: color 0.3s, border-color 0.3s;
     }
     #startBtn::before {
-      content: '';
-      position: absolute; inset: 0;
-      background: var(--gold);
-      transform: scaleX(0);
+      content: ''; position: absolute; inset: 0;
+      background: var(--gold); transform: scaleX(0);
       transform-origin: left;
       transition: transform 0.4s cubic-bezier(0.4,0,0.2,1);
       z-index: -1;
@@ -171,14 +162,12 @@
 
     /* ── LOADING ── */
     #loadingOverlay {
-      position: fixed; inset: 0;
-      background: #060504;
+      position: fixed; inset: 0; background: #060504;
       display: none; flex-direction: column;
       align-items: center; justify-content: center;
       z-index: 998; gap: 24px;
     }
     #loadingOverlay.show { display: flex; }
-
     .loading-ring {
       position: relative; width: 56px; height: 56px;
     }
@@ -191,59 +180,27 @@
       display: flex; align-items: center; justify-content: center;
     }
     .loading-ring-diamond::after {
-      content: '';
-      width: 8px; height: 8px;
+      content: ''; width: 8px; height: 8px;
       background: var(--gold); transform: rotate(45deg);
     }
     #loadingStatus {
-      color: rgba(245,240,232,0.4);
-      font-size: 11px; letter-spacing: 0.2em;
-      text-transform: uppercase;
-      transition: opacity 0.3s;
+      color: rgba(245,240,232,0.4); font-size: 11px;
+      letter-spacing: 0.2em; text-transform: uppercase;
     }
-
     @keyframes spin-slow { to { transform: rotate(360deg); } }
     @keyframes spin      { to { transform: rotate(360deg); } }
 
-    /* ── MINI MODEL LOADER ── */
-    #modelLoader {
-      position: fixed; top: 56px; left: 50%;
-      transform: translateX(-50%);
-      background: var(--glass-dark);
-      backdrop-filter: blur(16px) saturate(1.4);
-      -webkit-backdrop-filter: blur(16px) saturate(1.4);
-      border: 1px solid var(--gold-border);
-      border-radius: var(--radius-pill);
-      padding: 7px 18px;
-      color: rgba(245,240,232,0.6);
-      font-size: 10px; letter-spacing: 0.14em;
-      text-transform: uppercase;
-      z-index: 300;
-      display: none; align-items: center; gap: 9px;
-    }
-    #modelLoader.show { display: flex; }
-    .mini-spin {
-      width: 11px; height: 11px;
-      border: 1.5px solid rgba(201,168,76,0.2);
-      border-top-color: var(--gold);
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-
     /* ── ERROR ── */
     #errorOverlay {
-      position: fixed; inset: 0;
-      background: #060504;
+      position: fixed; inset: 0; background: #060504;
       display: none; flex-direction: column;
       align-items: center; justify-content: center;
-      z-index: 998; gap: 16px; padding: 36px;
-      text-align: center;
+      z-index: 998; gap: 16px; padding: 36px; text-align: center;
     }
     #errorOverlay.show { display: flex; }
     .err-icon-wrap {
       width: 72px; height: 72px;
-      border: 1px solid rgba(255,107,107,0.25);
-      border-radius: 50%;
+      border: 1px solid rgba(255,107,107,0.25); border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       font-size: 30px; margin-bottom: 8px;
     }
@@ -252,39 +209,53 @@
       color: #ff8080; font-size: 22px; font-weight: 400;
     }
     #errorOverlay p {
-      color: rgba(245,240,232,0.4);
-      font-size: 13px; line-height: 1.8; font-weight: 300;
-      max-width: 300px;
+      color: rgba(245,240,232,0.4); font-size: 13px;
+      line-height: 1.8; font-weight: 300; max-width: 300px;
     }
     #retryBtn {
       margin-top: 8px; padding: 12px 28px;
-      font-family: 'Jost', sans-serif;
-      font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+      font-family: 'Jost', sans-serif; font-size: 11px;
+      letter-spacing: 0.16em; text-transform: uppercase;
       border: 1px solid var(--gold-border); border-radius: var(--radius-pill);
       background: transparent; color: var(--gold);
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
     }
 
-    /* ── LOGO (in-AR) ── */
+    /* ── MODEL LOADER MINI ── */
+    #modelLoader {
+      position: fixed; top: 56px; left: 50%; transform: translateX(-50%);
+      background: var(--glass-dark);
+      backdrop-filter: blur(16px) saturate(1.4);
+      -webkit-backdrop-filter: blur(16px) saturate(1.4);
+      border: 1px solid var(--gold-border); border-radius: var(--radius-pill);
+      padding: 7px 18px; color: rgba(245,240,232,0.6);
+      font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+      z-index: 300; display: none; align-items: center; gap: 9px;
+    }
+    #modelLoader.show { display: flex; }
+    .mini-spin {
+      width: 11px; height: 11px;
+      border: 1.5px solid rgba(201,168,76,0.2);
+      border-top-color: var(--gold); border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    /* ── IN-AR LOGO ── */
     #logo {
       position: fixed; top: 14px; left: 14px;
-      width: 72px; z-index: 200;
-      opacity: 0; pointer-events: none;
+      width: 72px; z-index: 200; opacity: 0; pointer-events: none;
       transition: opacity 0.5s ease;
       filter: brightness(0) invert(1) sepia(1) saturate(0.5);
     }
 
     /* ── DISH LABEL ── */
     #dishLabel {
-      position: fixed; top: 14px; left: 50%;
-      transform: translateX(-50%);
+      position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
       background: var(--glass-dark);
       backdrop-filter: blur(16px) saturate(1.4);
       -webkit-backdrop-filter: blur(16px) saturate(1.4);
-      border: 1px solid var(--gold-border);
-      border-radius: var(--radius-pill);
+      border: 1px solid var(--gold-border); border-radius: var(--radius-pill);
       padding: 9px 22px;
       font-family: 'Cormorant Garamond', serif;
       font-size: 15px; font-weight: 400;
@@ -292,64 +263,71 @@
       white-space: nowrap; z-index: 200;
       opacity: 0; pointer-events: none;
       transition: opacity 0.5s ease;
-      max-width: calc(100vw - 200px);
+      max-width: calc(100vw - 120px);
       overflow: hidden; text-overflow: ellipsis;
     }
     #dishLabel .label-dot {
-      display: inline-block;
-      width: 5px; height: 5px;
+      display: inline-block; width: 5px; height: 5px;
       background: var(--gold); border-radius: 50%;
-      margin-right: 10px; vertical-align: middle;
-      position: relative; top: -1px;
+      margin-right: 10px; vertical-align: middle; position: relative; top: -1px;
     }
+
+    /* ── COUNTER DOTS ── */
+    #dishCounter {
+      position: fixed; top: 54px; left: 50%; transform: translateX(-50%);
+      background: var(--glass-dark);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--gold-border); border-radius: var(--radius-pill);
+      padding: 5px 16px;
+      display: flex; align-items: center; gap: 8px;
+      z-index: 200; opacity: 0; pointer-events: none;
+      transition: opacity 0.4s ease;
+    }
+    #dishCounter.visible { opacity: 1; }
+    .counter-dot {
+      width: 4px; height: 4px; border-radius: 50%;
+      background: rgba(201,168,76,0.25);
+      transition: background 0.25s, transform 0.25s; flex-shrink: 0;
+    }
+    .counter-dot.active { background: var(--gold); transform: scale(1.4); }
 
     /* ── CAROUSEL ── */
     #dishCarousel {
-      position: fixed; bottom: 20px; left: 50%;
-      transform: translateX(-50%);
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
       display: flex; gap: 6px; flex-wrap: nowrap;
-      overflow-x: auto;
-      max-width: calc(100vw - 20px);
+      overflow-x: auto; max-width: calc(100vw - 20px);
       padding: 10px 16px;
       background: var(--glass-dark);
       backdrop-filter: blur(20px) saturate(1.6);
       -webkit-backdrop-filter: blur(20px) saturate(1.6);
-      border: 1px solid var(--gold-border);
-      border-radius: 60px;
-      scrollbar-width: none;
-      -webkit-overflow-scrolling: touch;
-      z-index: 150;
-      opacity: 0; pointer-events: none;
+      border: 1px solid var(--gold-border); border-radius: 60px;
+      scrollbar-width: none; -webkit-overflow-scrolling: touch;
+      z-index: 150; opacity: 0; pointer-events: none;
       transition: opacity 0.5s ease;
     }
     #dishCarousel::-webkit-scrollbar { display: none; }
 
     .dish-thumb {
-      display: flex; flex-direction: column;
-      align-items: center; gap: 5px;
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
       cursor: pointer; flex-shrink: 0;
       padding: 4px 6px; border-radius: 50px;
       -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
-      transition: background 0.25s;
+      touch-action: manipulation; transition: background 0.25s;
     }
     .dish-thumb:active { transform: scale(0.92); }
     .dish-thumb.active { background: var(--gold-dim); }
-
     .thumb-img-wrap { position: relative; width: 50px; height: 50px; }
     .dish-thumb img {
-      width: 50px; height: 50px;
-      object-fit: cover; border-radius: 50%;
+      width: 50px; height: 50px; object-fit: cover; border-radius: 50%;
       border: 1.5px solid rgba(201,168,76,0.15);
       transition: border-color 0.25s, transform 0.25s;
-      -webkit-user-drag: none;
-      user-select: none; pointer-events: none; display: block;
+      -webkit-user-drag: none; user-select: none; pointer-events: none; display: block;
     }
     .dish-thumb.active img { border-color: var(--gold); transform: scale(1.06); }
     .thumb-active-ring {
       position: absolute; inset: -3px; border-radius: 50%;
-      border: 1px solid transparent; transition: border-color 0.25s;
-      pointer-events: none;
+      border: 1px solid transparent; transition: border-color 0.25s; pointer-events: none;
     }
     .dish-thumb.active .thumb-active-ring { border-color: rgba(201,168,76,0.35); }
     .dish-thumb span {
@@ -360,236 +338,125 @@
     }
     .dish-thumb.active span { color: var(--gold); }
 
-    /* ── SCAN HINT ── */
-    #scanHint {
-      position: fixed; top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      display: flex; flex-direction: column;
-      align-items: center; gap: 16px;
-      pointer-events: none; z-index: 10;
-      opacity: 0; transition: opacity 0.5s;
-    }
-    .scan-frame { position: relative; width: 180px; height: 180px; }
-    .scan-frame::before, .scan-frame::after,
-    .scan-corner-br, .scan-corner-bl {
-      content: '';
-      position: absolute;
-      width: 28px; height: 28px;
-      border-color: rgba(201,168,76,0.55);
-      border-style: solid;
-    }
-    .scan-frame::before { top: 0; left: 0; border-width: 1px 0 0 1px; }
-    .scan-frame::after  { top: 0; right: 0; border-width: 1px 1px 0 0; }
-    .scan-corner-br { bottom: 0; right: 0; border-width: 0 1px 1px 0; }
-    .scan-corner-bl { bottom: 0; left: 0; border-width: 0 0 1px 1px; }
-    .scan-line {
-      position: absolute; top: 0; left: 8px; right: 8px;
-      height: 1px; background: linear-gradient(90deg, transparent, var(--gold), transparent);
-      animation: scanLine 2.4s ease-in-out infinite;
-    }
-    @keyframes scanLine {
-      0%, 100% { top: 8px; opacity: 0; }
-      10% { opacity: 1; }
-      90% { opacity: 1; }
-      50% { top: calc(100% - 8px); }
-    }
-    #scanHint p {
-      font-size: 11px; font-weight: 400;
-      letter-spacing: 0.18em; text-transform: uppercase;
-      color: rgba(245,240,232,0.45);
-    }
-
-    /* ══════════════════════════════════════
-       SWIPE GESTURE LAYER
-    ══════════════════════════════════════ */
-
-    /* Full-screen invisible swipe zone sitting above AR but below UI chrome */
-    #swipeZone {
-      position: fixed; inset: 0;
-      z-index: 100;
-      touch-action: pan-y; /* allow vertical scroll but we capture horizontal */
-      -webkit-tap-highlight-color: transparent;
-      pointer-events: none; /* enabled after AR starts */
-    }
-    #swipeZone.active { pointer-events: auto; }
-
-    /* Swipe arrow hints — appear briefly on first swipe interaction */
-    #swipeHint {
-      position: fixed; top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      display: flex; align-items: center; gap: 24px;
-      pointer-events: none; z-index: 200;
-      opacity: 0;
-      transition: opacity 0.4s ease;
-    }
-    #swipeHint.show { opacity: 1; }
-    #swipeHint.fade { opacity: 0; }
-
-    .swipe-arrow {
-      display: flex; flex-direction: column;
-      align-items: center; gap: 6px;
-    }
-    .swipe-arrow-icon {
-      width: 44px; height: 44px;
-      border: 1px solid var(--gold-border);
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      background: var(--glass-dark);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-    }
-    .swipe-arrow-icon svg {
-      width: 18px; height: 18px;
-      stroke: var(--gold); fill: none;
-      stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
-    }
-    .swipe-arrow span {
-      font-size: 9px; letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: rgba(245,240,232,0.4);
-    }
-
-    /* Dish counter pill — shows "2 / 4" */
-    #dishCounter {
-      position: fixed; top: 54px; left: 50%;
-      transform: translateX(-50%);
-      background: var(--glass-dark);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid var(--gold-border);
-      border-radius: var(--radius-pill);
-      padding: 5px 16px;
-      display: flex; align-items: center; gap: 8px;
-      z-index: 200;
-      opacity: 0; pointer-events: none;
-      transition: opacity 0.4s ease;
-    }
-    #dishCounter.visible { opacity: 1; }
-
-    .counter-dot {
-      width: 4px; height: 4px;
-      border-radius: 50%;
-      background: rgba(201,168,76,0.25);
-      transition: background 0.25s, transform 0.25s;
-      flex-shrink: 0;
-    }
-    .counter-dot.active {
-      background: var(--gold);
-      transform: scale(1.4);
-    }
-
-    /* Swipe direction flash — brief directional overlay on swipe */
-    #swipeFlash {
-      position: fixed; inset: 0;
-      pointer-events: none; z-index: 99;
-      opacity: 0;
-    }
-    #swipeFlash.left  { background: linear-gradient(to right, rgba(201,168,76,0.06), transparent); }
-    #swipeFlash.right { background: linear-gradient(to left,  rgba(201,168,76,0.06), transparent); }
-
-    @keyframes flashFade {
-      0%   { opacity: 1; }
-      100% { opacity: 0; }
-    }
-    #swipeFlash.flash { animation: flashFade 0.35s ease-out forwards; }
-
-    /* ══════════════════════════════════════
-       SEE ON TABLE BUTTON
-    ══════════════════════════════════════ */
-    #tableBtn {
-      position: fixed;
-      bottom: 108px;             /* sits just above carousel */
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 160;
-      display: flex; align-items: center; gap: 9px;
-      padding: 11px 22px;
-      font-family: 'Jost', sans-serif;
-      font-size: 11px; font-weight: 400;
+    /* ── PLACE / RESET BUTTON ── */
+    #placeBtn {
+      position: fixed; bottom: 108px; left: 50%; transform: translateX(-50%);
+      z-index: 160; display: flex; align-items: center; gap: 9px;
+      padding: 11px 24px;
+      font-family: 'Jost', sans-serif; font-size: 11px; font-weight: 400;
       letter-spacing: 0.16em; text-transform: uppercase;
-      border: 1px solid var(--gold-border);
-      border-radius: var(--radius-pill);
+      border: 1px solid var(--gold-border); border-radius: var(--radius-pill);
       background: var(--glass-dark);
       backdrop-filter: blur(18px) saturate(1.5);
       -webkit-backdrop-filter: blur(18px) saturate(1.5);
-      color: var(--gold-light);
-      cursor: pointer;
+      color: var(--gold-light); cursor: pointer;
       opacity: 0; pointer-events: none;
-      transition: opacity 0.4s ease, background 0.25s, color 0.25s, border-color 0.25s;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
+      transition: opacity 0.4s ease, background 0.25s, border-color 0.25s;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
       white-space: nowrap;
     }
-    #tableBtn.visible        { opacity: 1; pointer-events: auto; }
-    #tableBtn.table-active   {
+    #placeBtn.visible { opacity: 1; pointer-events: auto; }
+    #placeBtn.placed  {
       background: rgba(201,168,76,0.15);
-      border-color: var(--gold);
-      color: var(--gold);
+      border-color: var(--gold); color: var(--gold);
     }
-    #tableBtn svg {
-      width: 15px; height: 15px;
-      stroke: currentColor; fill: none;
+    #placeBtn svg {
+      width: 15px; height: 15px; stroke: currentColor; fill: none;
       stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
-      flex-shrink: 0;
-      transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1);
+      flex-shrink: 0; transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1);
     }
-    #tableBtn.table-active svg { transform: scale(1.2) rotate(-10deg); }
+    #placeBtn.placed svg { transform: scale(1.2) rotate(-8deg); }
 
-    /* Ripple-drop entrance animation for table mode */
-    @keyframes dropIn {
-      0%   { opacity: 0; transform: translateY(-18px) scale(0.88); }
-      60%  { opacity: 1; transform: translateY(4px)  scale(1.03); }
-      100% { opacity: 1; transform: translateY(0)    scale(1); }
+    /* ── SWIPE ZONE ── */
+    #swipeZone {
+      position: fixed; inset: 0; z-index: 100;
+      touch-action: pan-y;
+      -webkit-tap-highlight-color: transparent;
+      pointer-events: none;
     }
-    /* Table mode badge shown top-right when active */
-    #tableBadge {
-      position: fixed; top: 14px; right: 14px;
-      z-index: 200;
-      display: flex; align-items: center; gap: 7px;
-      padding: 7px 14px;
+    #swipeZone.active { pointer-events: auto; }
+
+    /* ── SWIPE HINT ── */
+    #swipeHint {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      display: flex; align-items: center; gap: 24px;
+      pointer-events: none; z-index: 200;
+      opacity: 0; transition: opacity 0.4s ease;
+    }
+    #swipeHint.show { opacity: 1; }
+    .swipe-arrow { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .swipe-arrow-icon {
+      width: 44px; height: 44px; border: 1px solid var(--gold-border);
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
       background: var(--glass-dark);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid var(--gold-border);
-      border-radius: var(--radius-pill);
-      font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
-      color: var(--gold);
-      opacity: 0; pointer-events: none;
-      transition: opacity 0.35s ease;
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     }
-    #tableBadge.visible { opacity: 1; }
-    .badge-pulse {
-      width: 6px; height: 6px; border-radius: 50%;
-      background: var(--gold);
-      animation: pulse 1.8s ease-in-out infinite;
-      flex-shrink: 0;
+    .swipe-arrow-icon svg {
+      width: 18px; height: 18px; stroke: var(--gold); fill: none;
+      stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
     }
-    @keyframes pulse {
-      0%, 100% { opacity: 1;   transform: scale(1);   }
-      50%       { opacity: 0.4; transform: scale(0.7); }
+    .swipe-arrow span {
+      font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
+      color: rgba(245,240,232,0.4);
     }
 
-    /* Table surface shadow ring — gives depth illusion under the floating dish */
-    #tableShadow {
-      position: fixed;
-      bottom: 28%;   /* roughly where the dish base sits */
-      left: 50%;
-      transform: translateX(-50%);
-      width: 140px; height: 28px;
-      background: radial-gradient(ellipse, rgba(0,0,0,0.38) 0%, transparent 72%);
-      border-radius: 50%;
-      pointer-events: none; z-index: 1;
-      opacity: 0;
-      transition: opacity 0.5s ease;
+    /* ── SWIPE FLASH ── */
+    #swipeFlash {
+      position: fixed; inset: 0; pointer-events: none; z-index: 99; opacity: 0;
     }
-    #tableShadow.visible { opacity: 1; }
+    #swipeFlash.left  { background: linear-gradient(to right, rgba(201,168,76,0.06), transparent); }
+    #swipeFlash.right { background: linear-gradient(to left,  rgba(201,168,76,0.06), transparent); }
+    @keyframes flashFade { 0% { opacity: 1; } 100% { opacity: 0; } }
+    #swipeFlash.flash { animation: flashFade 0.35s ease-out forwards; }
+
+    /* ── PLACE HINT (tap to place) ── */
+    #placeHint {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      display: flex; flex-direction: column; align-items: center; gap: 16px;
+      pointer-events: none; z-index: 10;
+      opacity: 0; transition: opacity 0.5s;
+    }
+    #placeHint.visible { opacity: 1; }
+    .place-ring-outer {
+      width: 120px; height: 120px; border-radius: 50%;
+      border: 1px solid rgba(201,168,76,0.3);
+      display: flex; align-items: center; justify-content: center;
+      animation: breathe 2s ease-in-out infinite;
+    }
+    .place-ring-inner {
+      width: 80px; height: 80px; border-radius: 50%;
+      border: 1px solid rgba(201,168,76,0.55);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .place-ring-dot {
+      width: 10px; height: 10px;
+      background: var(--gold); border-radius: 50%;
+      animation: breathe 2s ease-in-out infinite reverse;
+    }
+    @keyframes breathe {
+      0%, 100% { transform: scale(1); opacity: 0.7; }
+      50%       { transform: scale(1.1); opacity: 1; }
+    }
+    #placeHint p {
+      font-size: 11px; font-weight: 400; letter-spacing: 0.18em;
+      text-transform: uppercase; color: rgba(245,240,232,0.5);
+    }
+
+    /* ── FLOOR SHADOW (ellipse under model) ── */
+    #floorShadow {
+      position: fixed; bottom: 26%; left: 50%; transform: translateX(-50%);
+      width: 150px; height: 30px;
+      background: radial-gradient(ellipse, rgba(0,0,0,0.45) 0%, transparent 75%);
+      border-radius: 50%; pointer-events: none; z-index: 1;
+      opacity: 0; transition: opacity 0.6s ease;
+    }
+    #floorShadow.visible { opacity: 1; }
 
     /* ── iOS safe area ── */
     @supports (padding-bottom: env(safe-area-inset-bottom)) {
       #dishCarousel { bottom: calc(20px + env(safe-area-inset-bottom)); }
-      #tableBtn     { bottom: calc(108px + env(safe-area-inset-bottom)); }
+      #placeBtn     { bottom: calc(108px + env(safe-area-inset-bottom)); }
     }
-
     @media (max-width: 390px) {
       .dish-thumb img { width: 42px; height: 42px; }
       .thumb-img-wrap { width: 42px; height: 42px; }
@@ -598,6 +465,9 @@
   </style>
 </head>
 <body>
+
+  <!-- ══ CAMERA FEED ══ -->
+  <video id="cameraFeed" autoplay playsinline muted></video>
 
   <!-- ══ START SCREEN ══ -->
   <div id="startScreen">
@@ -610,15 +480,15 @@
         <div class="start-ornament-line right"></div>
       </div>
       <h1>Explore the<br>flavours of <em>Japan</em></h1>
-      <p>Point your camera at the menu card to see every dish rendered in stunning 3D, right at your table.</p>
+      <p>Point your camera at the floor or table, then tap to place any dish in 3D — no card needed.</p>
       <button id="startBtn">Activate Camera</button>
     </div>
     <div class="start-footer">
-      <span>Powered by AR</span>
+      <span>Markerless AR</span>
       <div class="start-footer-dot"></div>
       <span>3D Preview</span>
       <div class="start-footer-dot"></div>
-      <span>Live Tracking</span>
+      <span>No Card Needed</span>
     </div>
   </div>
 
@@ -634,7 +504,7 @@
     <p id="loadingStatus">Starting camera</p>
   </div>
 
-  <!-- ══ MINI MODEL LOADER ══ -->
+  <!-- ══ MODEL MINI LOADER ══ -->
   <div id="modelLoader">
     <div class="mini-spin"></div>
     <span>Loading dish</span>
@@ -657,13 +527,12 @@
 
   <div id="dishLabel">
     <span class="label-dot"></span>
-    <span id="dishLabelText">Agedashi Tofu</span>
+    <span id="dishLabelText">Karamiso Ramen</span>
   </div>
 
-  <!-- ══ DISH COUNTER DOTS ══ -->
   <div id="dishCounter"></div>
 
-  <!-- ══ SWIPE HINT (shown once on AR start) ══ -->
+  <!-- ══ SWIPE HINT ══ -->
   <div id="swipeHint">
     <div class="swipe-arrow">
       <div class="swipe-arrow-icon">
@@ -679,105 +548,81 @@
     </div>
   </div>
 
-  <!-- ══ SWIPE FLASH ══ -->
   <div id="swipeFlash"></div>
-
-  <!-- ══ SWIPE ZONE (invisible, above AR) ══ -->
   <div id="swipeZone"></div>
 
-  <!-- ══ SEE ON TABLE BUTTON ══ -->
-  <button id="tableBtn" aria-label="See on table">
+  <!-- ══ PLACE HINT ══ -->
+  <div id="placeHint">
+    <div class="place-ring-outer">
+      <div class="place-ring-inner">
+        <div class="place-ring-dot"></div>
+      </div>
+    </div>
+    <p>Tap floor to place dish</p>
+  </div>
+
+  <!-- ══ FLOOR SHADOW ══ -->
+  <div id="floorShadow"></div>
+
+  <!-- ══ PLACE / RESET BUTTON ══ -->
+  <button id="placeBtn" aria-label="Reset placement">
     <svg viewBox="0 0 24 24">
       <path d="M3 17 Q12 13 21 17"/>
       <line x1="8"  y1="17" x2="7"  y2="21"/>
       <line x1="16" y1="17" x2="17" y2="21"/>
-      <path d="M8 10 Q12 7 16 10"/>
-      <ellipse cx="12" cy="10.5" rx="4" ry="1.5"/>
+      <circle cx="12" cy="9" r="3"/>
     </svg>
-    <span id="tableBtnText">See on Table</span>
+    <span id="placeBtnText">Tap Floor to Place</span>
   </button>
-
-  <!-- ══ TABLE MODE BADGE ══ -->
-  <div id="tableBadge">
-    <div class="badge-pulse"></div>
-    <span>Table View</span>
-  </div>
-
-  <!-- ══ TABLE SHADOW (depth illusion) ══ -->
-  <div id="tableShadow"></div>
-
-  <!-- ══ SCAN HINT ══ -->
-  <div id="scanHint">
-    <div class="scan-frame">
-      <div class="scan-line"></div>
-      <div class="scan-corner-br"></div>
-      <div class="scan-corner-bl"></div>
-    </div>
-    <p>Point at menu card</p>
-  </div>
 
   <!-- ══ CAROUSEL ══ -->
   <div id="dishCarousel"></div>
 
+  <!--
+    A-Frame scene — no MindAR, no marker target.
+    The model lives inside <a-camera> so it always renders
+    at a fixed camera-space position.
+    We tilt/shift it via JS to simulate floor placement.
+  -->
   <a-scene
     id="arScene"
-    mindar-image="imageTargetSrc: ./targets/card.mind;
-                  filterMinCF: 0.1;
-                  filterBeta: 10;
-                  missTolerance: 10;
-                  warmupTolerance: 2;
-                  maxTrack: 1;
-                  uiLoading: no;
-                  uiError: no;
-                  uiScanning: no"
-    renderer="colorManagement: true;
-              antialias: false;
-              logarithmicDepthBuffer: false;
-              precision: mediump;
-              physicallyCorrectLights: true"
+    renderer="colorManagement: true; antialias: false; logarithmicDepthBuffer: false; precision: mediump; physicallyCorrectLights: true; alpha: true"
+    background="transparent: true"
     loading-screen="enabled: false"
     vr-mode-ui="enabled: false"
     xr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: false"
-    style="display:none;">
+    style="position:fixed;inset:0;z-index:2;display:none;background:transparent;">
 
     <a-assets timeout="30000">
       <a-asset-item id="preload0" src="3d-model/KaramisoRamen/KaramisoRamen.glb"></a-asset-item>
     </a-assets>
 
     <a-light type="ambient"     color="#ffffff" intensity="1.8"></a-light>
-    <a-light type="directional" color="#ffffff" intensity="1.6"  position="1 3 2"></a-light>
-    <a-light type="directional" color="#ffe9c0" intensity="1.0"  position="-2 2 -1"></a-light>
-    <a-light type="directional" color="#cce8ff" intensity="0.6"  position="0 -1 2"></a-light>
-    <a-light type="point"       color="#fff5e0" intensity="1.2"  position="0 1.5 1" distance="4" decay="2"></a-light>
+    <a-light type="directional" color="#ffffff" intensity="1.6" position="1 3 2"></a-light>
+    <a-light type="directional" color="#ffe9c0" intensity="1.0" position="-2 2 -1"></a-light>
+    <a-light type="directional" color="#cce8ff" intensity="0.6" position="0 -1 2"></a-light>
+    <a-light type="point"       color="#fff5e0" intensity="1.2" position="0 1.5 1" distance="4" decay="2"></a-light>
 
-    <a-camera position="0 0 0" look-controls="enabled: false">
+    <a-camera position="0 0 0" look-controls="enabled: false" wasd-controls="enabled: false">
       <!--
-        Fixed entity locked to camera — always at this screen-space position.
-        x=0      → horizontally centred
-        y=-0.55  → slightly below eye line (table surface feel)
-        z=-1.4   → ~1.4 m in front of camera (comfortable floating preview)
-        Hidden by default; shown only in table mode.
+        The dish entity — always in front of camera.
+        Default: hidden until user taps to place.
+        Position breakdown:
+          x = 0       (centred)
+          y = -0.7    (below eye → simulates floor / table surface)
+          z = -1.8    (~1.8m forward — comfortable "on table" depth)
       -->
       <a-entity
-        id="tableEntity"
-        position="0 -0.55 -1.4"
+        id="dishEntity"
+        position="0 -0.7 -1.8"
         rotation="0 0 0"
         scale="1 1 1"
         gltf-model=""
-        visible="false">
+        visible="false"
+        animation__idle="property: rotation; to: 0 360 0; loop: true; dur: 18000; easing: linear">
       </a-entity>
     </a-camera>
-
-    <a-entity id="target1" mindar-image-target="targetIndex: 0">
-      <a-entity
-        id="modelEntity"
-        position="0 0 0"
-        rotation="0 0 0"
-        scale="1 1 1"
-        gltf-model="">
-      </a-entity>
-    </a-entity>
   </a-scene>
 
   <script>
@@ -785,30 +630,27 @@
        DISH DATA
     ══════════════════════════════════════ */
     const dishes = [
-      { name: "Karamiso Ramen",  folder: "KaramisoRamen", model: "KaramisoRamen.glb", thumb: "karamisoramen.png", scale: "4 4 4",     rotation: "90 90 90" },
-      { name: "Shio Ramen",      folder: "ShioRamen",     model: "ShioRamen.glb",     thumb: "shioramen.png",     scale: "9 9 9",     rotation: "90 90 90" },
-      { name: "Shoyu Ramen",     folder: "ShoyuRamen",    model: "ShoyuRamen.glb",    thumb: "shoyuramen.png",    scale: "9 9 9",     rotation: "90 90 90" },
-      { name: "Tantanmen",       folder: "Tantanman",     model: "Tantanman.glb",     thumb: "tantanman.png",     scale: "1.5 1.5 1.5", rotation: "90 90 90" },
+      { name: "Karamiso Ramen", folder: "KaramisoRamen", model: "KaramisoRamen.glb", thumb: "karamisoramen.png", scale: "4 4 4",       rotation: "0 0 0" },
+      { name: "Shio Ramen",     folder: "ShioRamen",     model: "ShioRamen.glb",     thumb: "shioramen.png",     scale: "9 9 9",       rotation: "0 0 0" },
+      { name: "Shoyu Ramen",    folder: "ShoyuRamen",    model: "ShoyuRamen.glb",    thumb: "shoyuramen.png",    scale: "9 9 9",       rotation: "0 0 0" },
+      { name: "Tantanmen",      folder: "Tantanman",     model: "Tantanman.glb",     thumb: "tantanman.png",     scale: "1.5 1.5 1.5", rotation: "0 0 0" },
     ];
 
-    let currentIndex   = -1;
-    let arStarted      = false;
-    let modelTimeout   = null;
-    let swipeHintShown = false;
-    let tableModeOn    = false;   // tracks See-on-Table state
+    /* ══════════════════════════════════════
+       STATE
+    ══════════════════════════════════════ */
+    let currentIndex    = -1;
+    let arStarted       = false;
+    let placed          = false;   // true after user taps floor
+    let modelTimeout    = null;
+    let swipeHintShown  = false;
 
-    const tableEntity    = document.querySelector('#tableEntity');
-    const tableBtn       = document.querySelector('#tableBtn');
-    const tableBtnText   = document.querySelector('#tableBtnText');
-    const tableBadge     = document.querySelector('#tableBadge');
-    const tableShadow    = document.querySelector('#tableShadow');
-    const modelEntity    = document.querySelector('#modelEntity');
+    /* ── DOM refs ── */
+    const dishEntity     = document.querySelector('#dishEntity');
     const dishLabel      = document.querySelector('#dishLabel');
     const dishLabelText  = document.querySelector('#dishLabelText');
     const carousel       = document.querySelector('#dishCarousel');
     const logo           = document.querySelector('#logo');
-    const scanHint       = document.querySelector('#scanHint');
-    const target         = document.querySelector('#target1');
     const arScene        = document.querySelector('#arScene');
     const startScreen    = document.querySelector('#startScreen');
     const loadingOverlay = document.querySelector('#loadingOverlay');
@@ -819,11 +661,15 @@
     const swipeHint      = document.querySelector('#swipeHint');
     const swipeFlash     = document.querySelector('#swipeFlash');
     const dishCounter    = document.querySelector('#dishCounter');
+    const placeBtn       = document.querySelector('#placeBtn');
+    const placeBtnText   = document.querySelector('#placeBtnText');
+    const placeHint      = document.querySelector('#placeHint');
+    const floorShadow    = document.querySelector('#floorShadow');
+    const cameraFeed     = document.querySelector('#cameraFeed');
 
-    const alwaysVisible = [carousel, logo, dishCounter, tableBtn];
-    const markerEls     = [dishLabel];
-
-    /* ── BUILD CAROUSEL ── */
+    /* ══════════════════════════════════════
+       BUILD CAROUSEL
+    ══════════════════════════════════════ */
     dishes.forEach((dish, i) => {
       const thumb = document.createElement('div');
       thumb.className = 'dish-thumb' + (i === 0 ? ' active' : '');
@@ -834,14 +680,13 @@
                alt="${dish.name}" draggable="false">
           <div class="thumb-active-ring"></div>
         </div>
-        <span>${dish.name}</span>
-      `;
-      thumb.addEventListener('click', () => selectDish(i));
+        <span>${dish.name}</span>`;
+      thumb.addEventListener('click',    () => selectDish(i));
       thumb.addEventListener('touchend', (e) => { e.preventDefault(); selectDish(i); });
       carousel.appendChild(thumb);
     });
 
-    /* ── BUILD COUNTER DOTS ── */
+    /* BUILD COUNTER DOTS */
     dishes.forEach((_, i) => {
       const dot = document.createElement('div');
       dot.className = 'counter-dot' + (i === 0 ? ' active' : '');
@@ -850,12 +695,14 @@
     });
 
     function updateCounterDots(index) {
-      document.querySelectorAll('.counter-dot').forEach((dot, i) => {
-        dot.classList.toggle('active', i === index);
+      document.querySelectorAll('.counter-dot').forEach((d, i) => {
+        d.classList.toggle('active', i === index);
       });
     }
 
-    /* ── SELECT DISH ── */
+    /* ══════════════════════════════════════
+       SELECT DISH
+    ══════════════════════════════════════ */
     function selectDish(index) {
       if (index === currentIndex) return;
       currentIndex = index;
@@ -864,203 +711,181 @@
       if (modelTimeout) { clearTimeout(modelTimeout); modelTimeout = null; }
 
       modelLoader.classList.add('show');
-      modelEntity.removeAttribute('gltf-model');
+      dishEntity.removeAttribute('gltf-model');
 
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          modelEntity.setAttribute('gltf-model', `3d-model/${dish.folder}/${dish.model}`);
-          modelEntity.setAttribute('scale',    dish.scale);
-          modelEntity.setAttribute('rotation', dish.rotation);
-          modelEntity.setAttribute('position', '0 0 0');
+          dishEntity.setAttribute('gltf-model', `3d-model/${dish.folder}/${dish.model}`);
+          dishEntity.setAttribute('scale',    dish.scale);
+          dishEntity.setAttribute('rotation', dish.rotation);
+          if (placed) dishEntity.setAttribute('visible', 'true');
         });
       });
 
-      modelEntity.addEventListener('model-loaded', () => {
+      dishEntity.addEventListener('model-loaded', () => {
         modelLoader.classList.remove('show');
         if (modelTimeout) { clearTimeout(modelTimeout); modelTimeout = null; }
       }, { once: true });
 
-      modelTimeout = setTimeout(() => modelLoader.classList.remove('show'), 5000);
+      modelTimeout = setTimeout(() => modelLoader.classList.remove('show'), 6000);
 
       dishLabelText.textContent = dish.name;
 
-      // Update carousel
       document.querySelectorAll('.dish-thumb').forEach((el, i) => {
         el.classList.toggle('active', i === index);
       });
       document.querySelectorAll('.dish-thumb')[index]
         .scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
 
-      // Update counter dots
       updateCounterDots(index);
-
-      // If table mode is on, sync the new dish into tableEntity
-      if (tableModeOn) {
-        const d = dishes[index];
-        tableEntity.removeAttribute('gltf-model');
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            tableEntity.setAttribute('gltf-model', `3d-model/${d.folder}/${d.model}`);
-            const parts  = d.scale.split(' ').map(Number);
-            const factor = 0.35;
-            tableEntity.setAttribute('scale', parts.map(v => v * factor).join(' '));
-            tableEntity.setAttribute('rotation', d.rotation);
-          });
-        });
-      }
     }
-
 
     /* ══════════════════════════════════════
-       SEE ON TABLE — table mode logic
-       When activated:
-         1. Hides the marker-bound modelEntity
-         2. Copies the current dish model into tableEntity (camera child)
-         3. tableEntity is always visible at fixed camera-space coords
-         4. Pressing again restores marker tracking mode
+       PLACEMENT LOGIC
+       Tap anywhere on screen (above swipeZone) → place dish.
+       After placing, tapping swipeZone still works for swipes.
+       Button lets user reset and re-place.
     ══════════════════════════════════════ */
-    function setTableMode(on) {
-      tableModeOn = on;
+    function placeDish() {
+      if (!arStarted) return;
+      placed = true;
 
-      if (on) {
-        // Mirror current dish into the camera-locked entity
-        const dish = dishes[currentIndex];
-        tableEntity.removeAttribute('gltf-model');
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            tableEntity.setAttribute('gltf-model', `3d-model/${dish.folder}/${dish.model}`);
-            // Scale down slightly from marker scale for comfortable viewing distance
-            const parts  = dish.scale.split(' ').map(Number);
-            const factor = 0.35; // table view scale factor — tweak per project
-            tableEntity.setAttribute('scale', parts.map(v => v * factor).join(' '));
-            tableEntity.setAttribute('rotation', dish.rotation);
-            tableEntity.setAttribute('visible', 'true');
-          });
-        });
+      dishEntity.setAttribute('visible', 'true');
 
-        // Hide the marker model so both don't show at once
-        modelEntity.setAttribute('visible', 'false');
+      // Fade out hint
+      placeHint.classList.remove('visible');
+      floorShadow.classList.add('visible');
 
-        // UI
-        tableBtn.classList.add('table-active');
-        tableBtnText.textContent = 'Back to Card';
-        tableBadge.classList.add('visible');
-        tableShadow.classList.add('visible');
-        dishLabel.style.opacity = '0';
-        dishLabel.style.pointerEvents = 'none';
-        scanHint.style.opacity = '0';
+      // Show dish label
+      dishLabel.style.opacity = '1';
+      dishLabel.style.pointerEvents = 'auto';
 
-      } else {
-        // Restore marker tracking mode
-        tableEntity.setAttribute('visible', 'false');
-        tableEntity.removeAttribute('gltf-model');
-        modelEntity.setAttribute('visible', 'true');
+      // Update button
+      placeBtn.classList.add('placed');
+      placeBtnText.textContent = 'Reset Placement';
 
-        // UI
-        tableBtn.classList.remove('table-active');
-        tableBtnText.textContent = 'See on Table';
-        tableBadge.classList.remove('visible');
-        tableShadow.classList.remove('visible');
-        scanHint.style.opacity = '1';
-      }
+      showSwipeHintOnce();
     }
 
+    function resetPlacement() {
+      placed = false;
+      dishEntity.setAttribute('visible', 'false');
+
+      // Show tap hint again
+      placeHint.classList.add('visible');
+      floorShadow.classList.remove('visible');
+
+      dishLabel.style.opacity = '0';
+      dishLabel.style.pointerEvents = 'none';
+
+      placeBtn.classList.remove('placed');
+      placeBtnText.textContent = 'Tap Floor to Place';
+    }
+
+    /* Tap-to-place on swipe zone (only if no swipe triggered) */
+    swipeZone.addEventListener('click', (e) => {
+      if (!arStarted) return;
+      if (!placed) placeDish();
+    });
+
+    /* Place / Reset button */
     ['click','touchend'].forEach(evt => {
-      tableBtn.addEventListener(evt, (e) => {
+      placeBtn.addEventListener(evt, (e) => {
         e.preventDefault();
-        setTableMode(!tableModeOn);
+        if (placed) resetPlacement();
+        else placeDish();
       });
     });
 
-    /* When dish changes while in table mode, update tableEntity too */
-    const _origSelectDish = selectDish;
+    /* ══════════════════════════════════════
+       DEVICE ORIENTATION — gentle tilt
+       When the user tilts their phone downward (looking at floor)
+       we slightly adjust the entity's y and z to feel more grounded.
+       This is cosmetic, not true plane detection.
+    ══════════════════════════════════════ */
+    let lastBeta = 45; // default tilt angle
+
+    function onDeviceOrientation(e) {
+      if (!placed) return;
+      const beta = e.beta || 45; // tilt front-back: 0 = flat, 90 = upright
+      // Smooth
+      lastBeta = lastBeta * 0.85 + beta * 0.15;
+
+      // Map beta (30→90) → y offset (-0.5 → -1.1) and z offset (-1.4 → -2.2)
+      const t = Math.min(1, Math.max(0, (lastBeta - 30) / 60));
+      const y = -0.5 - t * 0.6;
+      const z = -1.4 - t * 0.8;
+
+      dishEntity.setAttribute('position', `0 ${y.toFixed(3)} ${z.toFixed(3)}`);
+    }
+
+    function requestOrientationPermission() {
+      if (typeof DeviceOrientationEvent !== 'undefined' &&
+          typeof DeviceOrientationEvent.requestPermission === 'function') {
+        // iOS 13+
+        DeviceOrientationEvent.requestPermission().then(state => {
+          if (state === 'granted') {
+            window.addEventListener('deviceorientation', onDeviceOrientation, true);
+          }
+        }).catch(() => {});
+      } else {
+        window.addEventListener('deviceorientation', onDeviceOrientation, true);
+      }
+    }
 
     /* ══════════════════════════════════════
-       SWIPE GESTURE HANDLER
-       - Tracks touchstart/touchend on swipeZone
-       - Min horizontal distance: 50px
-       - Max vertical drift: 80px (prevents false triggers when tilting phone)
-       - Debounce: 300ms between swipes
+       SWIPE GESTURE
     ══════════════════════════════════════ */
-    let touchStartX = 0;
-    let touchStartY = 0;
-    let touchStartTime = 0;
-    let swipeLocked = false;
-
-    const SWIPE_MIN_X   = 50;   // px — minimum horizontal travel
-    const SWIPE_MAX_Y   = 80;   // px — maximum vertical drift allowed
-    const SWIPE_MAX_MS  = 500;  // ms — must complete within this time
-    const SWIPE_DEBOUNCE = 300; // ms — cooldown between swipes
+    let touchStartX = 0, touchStartY = 0, touchStartTime = 0, swipeLocked = false;
+    const SWIPE_MIN_X = 50, SWIPE_MAX_Y = 80, SWIPE_MAX_MS = 500, SWIPE_DEBOUNCE = 300;
 
     swipeZone.addEventListener('touchstart', (e) => {
       const t = e.changedTouches[0];
-      touchStartX    = t.clientX;
-      touchStartY    = t.clientY;
-      touchStartTime = Date.now();
+      touchStartX = t.clientX; touchStartY = t.clientY; touchStartTime = Date.now();
     }, { passive: true });
 
     swipeZone.addEventListener('touchend', (e) => {
       if (swipeLocked) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - touchStartX;
+      const dy = t.clientY - touchStartY;
+      const dt = Date.now() - touchStartTime;
+      const absDx = Math.abs(dx), absDy = Math.abs(dy);
 
-      const t      = e.changedTouches[0];
-      const dx     = t.clientX - touchStartX;
-      const dy     = t.clientY - touchStartY;
-      const dt     = Date.now() - touchStartTime;
-      const absDx  = Math.abs(dx);
-      const absDy  = Math.abs(dy);
-
-      // Must be fast enough, wide enough, and not too vertical
-      if (dt > SWIPE_MAX_MS)    return;
-      if (absDx < SWIPE_MIN_X)  return;
-      if (absDy > SWIPE_MAX_Y)  return;
-      if (absDy > absDx * 0.9)  return; // more vertical than horizontal — ignore
+      if (dt > SWIPE_MAX_MS || absDx < SWIPE_MIN_X || absDy > SWIPE_MAX_Y || absDy > absDx * 0.9) return;
 
       swipeLocked = true;
       setTimeout(() => { swipeLocked = false; }, SWIPE_DEBOUNCE);
-
-      if (dx < 0) {
-        // Swipe LEFT → next dish
-        triggerSwipe('left');
-      } else {
-        // Swipe RIGHT → prev dish
-        triggerSwipe('right');
-      }
+      triggerSwipe(dx < 0 ? 'left' : 'right');
     }, { passive: true });
 
     function triggerSwipe(direction) {
       const total = dishes.length;
-      let next;
+      const next = direction === 'left'
+        ? (currentIndex + 1) % total
+        : (currentIndex - 1 + total) % total;
 
-      if (direction === 'left') {
-        next = (currentIndex + 1) % total;
-      } else {
-        next = (currentIndex - 1 + total) % total;
-      }
-
-      // Flash edge glow
       swipeFlash.className = direction + ' flash';
-      swipeFlash.addEventListener('animationend', () => {
-        swipeFlash.className = '';
-      }, { once: true });
-
+      swipeFlash.addEventListener('animationend', () => { swipeFlash.className = ''; }, { once: true });
       selectDish(next);
     }
 
-    /* ── SHOW SWIPE HINT ONCE on AR ready ── */
     function showSwipeHintOnce() {
       if (swipeHintShown) return;
       swipeHintShown = true;
-
-      // Wait a beat after AR loads, then show hint for 2.5s
       setTimeout(() => {
         swipeHint.classList.add('show');
-        setTimeout(() => {
-          swipeHint.classList.remove('show');
-        }, 2500);
-      }, 1200);
+        setTimeout(() => swipeHint.classList.remove('show'), 2500);
+      }, 600);
     }
 
-    /* ── START AR ── */
+    /* ══════════════════════════════════════
+       START AR — markerless
+       1. Request camera permission
+       2. Pipe camera stream into <video>
+       3. Show A-Frame scene (transparent canvas overlay)
+       4. Show place-hint; user taps to confirm placement
+    ══════════════════════════════════════ */
     async function startAR() {
       if (arStarted) return;
 
@@ -1072,47 +897,56 @@
       try {
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
-        const videoConstraints = isIOS
-          ? { facingMode: { exact: 'environment' } }
-          : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } };
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: videoConstraints,
+        const constraints = {
+          video: isIOS
+            ? { facingMode: { exact: 'environment' } }
+            : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false
-        });
-        stream.getTracks().forEach(t => t.stop());
+        };
 
-        loadingStatus.textContent = 'Initialising AR';
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+        // Pipe into video element
+        cameraFeed.srcObject = stream;
+        await new Promise((res) => { cameraFeed.onloadedmetadata = res; });
+        await cameraFeed.play();
+
+        loadingStatus.textContent = 'Preparing 3D scene';
+
+        // Show A-Frame scene
         arScene.style.display = 'block';
 
         let readyFired = false;
-
         const onReady = () => {
           if (readyFired) return;
           readyFired = true;
 
           loadingOverlay.classList.remove('show');
-          scanHint.style.opacity = '1';
           arStarted = true;
 
-          // Enable swipe zone
+          // Enable swipe + tap zone
           swipeZone.classList.add('active');
 
-          alwaysVisible.forEach(el => {
+          // Show always-visible elements
+          [carousel, logo, dishCounter, placeBtn].forEach(el => {
             el.style.opacity = '1';
             el.style.pointerEvents = 'auto';
           });
-          markerEls.forEach(el => {
-            el.style.opacity = '0';
-            el.style.pointerEvents = 'none';
-          });
+          placeBtn.classList.add('visible');
+          dishCounter.classList.add('visible');
 
+          // Show tap hint
+          placeHint.classList.add('visible');
+
+          // Pre-select first dish (model loads but stays hidden until tap)
           selectDish(0);
-          showSwipeHintOnce();
+
+          // Request orientation
+          requestOrientationPermission();
         };
 
         arScene.addEventListener('loaded', onReady, { once: true });
-        arScene.addEventListener('arReady',  onReady, { once: true });
+        arScene.addEventListener('renderstart', onReady, { once: true });
         setTimeout(onReady, 3000);
 
       } catch (err) {
@@ -1122,7 +956,9 @@
       }
     }
 
-    /* ── BUTTON HANDLERS ── */
+    /* ══════════════════════════════════════
+       BUTTON HANDLERS
+    ══════════════════════════════════════ */
     ['click','touchend'].forEach(evt => {
       document.querySelector('#startBtn').addEventListener(evt, (e) => {
         e.preventDefault(); startAR();
@@ -1133,23 +969,6 @@
         startScreen.style.display = 'flex';
         startScreen.style.opacity = '1';
       });
-    });
-
-    /* ── AR TARGET EVENTS ── */
-    target.addEventListener('targetFound', () => {
-      markerEls.forEach(el => {
-        el.style.opacity = '1';
-        el.style.pointerEvents = 'auto';
-      });
-      scanHint.style.opacity = '0';
-    });
-
-    target.addEventListener('targetLost', () => {
-      markerEls.forEach(el => {
-        el.style.opacity = '0';
-        el.style.pointerEvents = 'none';
-      });
-      scanHint.style.opacity = '1';
     });
 
     document.addEventListener('contextmenu', e => e.preventDefault());
